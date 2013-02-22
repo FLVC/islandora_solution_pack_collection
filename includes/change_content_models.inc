@@ -4,16 +4,14 @@
  * @file
  * ChangeContentModels.inc
  */
-
-function islandora_change_content_models_form($form, &$form_state, $collection_object) {
-  module_load_include('inc', 'islandora_basic_collection', 'includes/CollectionPolicy');
+function islandora_change_content_models_form($form, &$form_state, $collection_object, $url) {
   $collection_pid = $collection_object->id;
   $content_models = get_content_models_list($collection_object);
   $cm_options = array();
   $name_mappings = array();
   foreach ($content_models as $content_model) {
     if ($content_model != "islandora:collectionCModel") {
-      $item = new FedoraObject($content_model, $rest_connection->repository);
+      $item = $collection_object->repository->getObject($content_model);
       $cm_name = $item->Label;
       $cm_options[$content_model] = $cm_name;
     }
@@ -40,6 +38,16 @@ function islandora_change_content_models_form($form, &$form_state, $collection_o
       $current_models_in_policy[$supported_model['pid']] = $supported_model['pid'];
     }
   }
+
+  $form['link'] = array(
+    '#type' => 'item',
+    '#markup' => l(t("Return to Collection Manager"), $url),
+  );
+
+  $form['page_title'] = array(
+    '#type' => 'item',
+    '#markup' => '<h1>' . t('Change Content Models') . '</h1>',
+  );
 
   $form['change_cmodel']['titlebox'] = array(
     '#type' => 'item',
@@ -79,8 +87,6 @@ function islandora_change_content_models_form_validate($form, &$form_state) {
 }
 
 function islandora_change_content_models_form_submit($form, &$form_state) {
-  module_load_include('inc', 'islandora_basic_collection', 'includes/CollectionPolicy');
-
   $current_content_model = $form_state['values']['current_content_model'];
   $new_content_model = $form_state['values']['new_content_model'];
   $collection_pid = $form_state['values']['collection_pid'];
@@ -129,7 +135,7 @@ function islandora_change_content_models_form_submit($form, &$form_state) {
            or \$object <info:fedora/fedora-system:def/relations-external#isMemberOf> <info:fedora/$collection_pid>)
       and \$object <fedora-model:state> <info:fedora/fedora-system:def/model#Active>)";
 
-  $objects = $collection_object->repository->ri->itqlQuery($query, 'unlimited', '0');
+  $objects = $collection_object->repository->ri->itqlQuery($query, 'unlimited');
 
   $count = 0;
   foreach ($objects as $object) {
