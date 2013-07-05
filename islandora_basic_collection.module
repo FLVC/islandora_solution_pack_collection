@@ -48,6 +48,36 @@ function islandora_basic_collection_menu() {
 }
 
 /**
+ * Access callback for ingest.
+ *
+ * @param AbstractObject $object
+ *   The object to test if we're allowed to ingest... Check that it actually
+ *   a collection and we have sufficient info to show the form.
+ *
+ * @return bool
+ *   TRUE if $object represents a collection, we can show the ingest form and
+ *   we have permission to ingest; otherwise, FALSE.
+ */
+function islandora_basic_collection_ingest_access(AbstractObject $object) {
+  $collection_models = islandora_basic_collection_get_collection_content_models();
+  $is_a_collection = (
+    (count(array_intersect($collection_models, $object->models)) > 0) &&
+    isset($object['COLLECTION_POLICY'])
+  );
+
+  if (!$is_a_collection) {
+    return FALSE;
+  }
+
+  module_load_include('inc', 'islandora', 'includes/ingest.form');
+  module_load_include('inc', 'islandora_basic_collection', 'includes/ingest.form');
+  $configuration = islandora_basic_collection_get_ingest_configuration($object);
+  $has_ingest_steps = islandora_ingest_can_display_ingest_form($configuration);
+
+  return $has_ingest_steps && islandora_object_access(FEDORA_INGEST, $object);
+}
+
+/**
  * Implements hook_menu_alter().
  */
 function islandora_basic_collection_menu_alter(array &$items) {
@@ -102,53 +132,16 @@ function islandora_basic_collection_islandora_required_objects(IslandoraTuque $c
  *   TRUE if it should be shown, and FALSE if it should not be shown.
  */
 function islandora_basic_collection_manage_access($object = NULL) {
-  if (!is_object($object) || !in_array('islandora:collectionCModel', $object->models)) {
-    return FALSE;
-  }
-  return islandora_basic_collection_ingest_child_collection_access($object) ||
-    user_access(MANAGE_COLLECTION_POLICY) ||
-    user_access(MIGRATE_COLLECTION_MEMBERS) ||
-    islandora_basic_collection_ingest_access($object);
-}
+  $collection_models = islandora_basic_collection_get_collection_content_models();
+  $is_a_collection = count(array_intersect($collection_models, $object->models)) > 0;
 
-/**
- * Checks if the user has access to ingest a new child collection.
- *
- * @return bool
- *   TRUE if the user has access, FALSE otherwise.
- */
-function islandora_basic_collection_ingest_child_collection_access($object = NULL) {
-  $user_access = user_access(FEDORA_INGEST) && user_access(CREATE_CHILD_COLLECTION);
-  $is_collection = is_object($object) && in_array('islandora:collectionCModel', $object->models);
-  $has_policy = isset($object['COLLECTION_POLICY']);
-  if (!($user_access && $is_collection && $has_policy)) {
-    return FALSE;
-  }
-  $policy = new CollectionPolicy($object['COLLECTION_POLICY']->content);
-  $policy_content_models = $policy->getContentModels();
-  return isset($policy_content_models['islandora:collectionCModel']);
-}
-
-/**
- * Ingest action access callback.
- *
- * @param AbstractObject $object
- *   Collection object to check if ingestion is possible.
- */
-function islandora_basic_collection_ingest_access($object = NULL) {
-  if (!islandora_user_access($object, array(FEDORA_INGEST), array('islandora:collectionCModel'))) {
-    return FALSE;
-  }
-  module_load_include('inc', 'islandora', 'includes/ingest.form');
-  module_load_include('inc', 'islandora_basic_collection', 'includes/ingest.form');
-  // Reduce need to validate to once per object, as this if often called more
-  // than once per request.
-  static $checked_objects = array();
-  if (!in_array($object->id, array_keys($checked_objects))) {
-    $configuration = islandora_basic_collection_get_ingest_configuration($object);
-    $checked_objects[$object->id] = islandora_ingest_can_display_ingest_form($configuration);
-  }
-  return $checked_objects[$object->id];
+  return $is_a_collection && (
+    islandora_object_access(CREATE_CHILD_COLLECTION, $object) ||
+    islandora_object_access(MANAGE_COLLECTION_POLICY, $object) ||
+    islandora_object_access(MIGRATE_COLLECTION_MEMBERS, $object) ||
+    islandora_object_access(FEDORA_INGEST, $object) ||
+    islandora_object_access(FEDORA_PURGE, $object)
+  );
 }
 
 /**
@@ -193,22 +186,48 @@ function islandora_basic_collection_islandora_collectionCModel_islandora_view_ob
  */
 function islandora_basic_collection_islandora_collectionCModel_islandora_overview_object(AbstractObject $object) {
   $rows = array();
-  $members = islandora_basic_collection_get_objects($object);
-  foreach ($members as $member) {
-    $content_model = islandora_object_load($member['content']['value']);
-    if (isset($rows[$content_model->id])) {
-      $rows[$content_model->id][1]++;
+  $model_query = islandora_basic_collection_get_query_info(array(
+    'object' => $object,
+    'page_size' => -1,
+    'page_number' => 0,
+    'vars' => '?model',
+    'order_by' => FALSE,
+  ));
+  $models = (array) $object->repository->ri->query($model_query['query'], $model_query['type']);
+  $ignore_models = array(
+    'fedora-system:FedoraObject-3.0',
+  );
+  foreach ($models as $model) {
+    $model_pid = $model['model']['value'];
+    if (in_array($model_pid, $ignore_models)) {
+      continue;
     }
-    else {
-      $link = l($content_model->label, "islandora/object/{$content_model->id}");
-      $rows[$content_model->id] = array($link, 1);
-    }
+    $model_count_query = islandora_basic_collection_get_query_info(array(
+      'object' => $object,
+      'page_size' => -1,
+      'page_number' => 0,
+      'order_by' => FALSE,
+      'model' => "<info:fedora/$model_pid>",
+    ));
+    $model_object = islandora_object_load($model_pid);
+    $rows[$model_pid] = array(
+      ($model_object ?
+        l($model_object->label, "islandora/object/{$model_object->id}") :
+        $model_pid),
+      $object->repository->ri->countQuery($model_count_query['query'], $model_count_query['type']),
+    );
   }
+
+  list($total_count, $all_results) = islandora_basic_collection_get_member_objects($object, 0, 0);
+
   $content = array(
-    'total' => array('#markup' => t('Total members: %total', array('%total' => count($members)))),
+    'total' => array('#markup' => t('Total members: %total', array('%total' => $total_count))),
     'table' => array(
       '#theme' => 'table',
-      '#header' => array('type' => array('data' => t('Type')), 'count' => array('data' => t('Count'))),
+      '#header' => array(
+        'type' => array('data' => t('Type')),
+        'count' => array('data' => t('Count')),
+      ),
       '#rows' => $rows,
       '#empty' => t('Collection is empty.')),
   );
@@ -238,6 +257,113 @@ function islandora_basic_collection_islandora_overview_object(AbstractObject $ob
 }
 
 /**
+ * Get the query to get child objects.
+ *
+ * @param array $params
+ *   An array containing all the parameters, at least:
+ *   - object: An AbstractObject we're querying for.
+ *   but may also contain:
+ *   - page_size: The size of the page/number of results to return. Defaults to
+ *     10.
+ *   - page_number: An integer representing the offset as a multiple of
+ *     page_size. Defaults to 0.
+ *   - vars: A string containing the list of variables to select. Defaults to
+ *     "?object ?title".
+ *   - order_by: A string indicating which variable by which to sort. Defaults
+ *     to "?title". May be set to FALSE to avoid sorting.
+ *   - model: A string representing a URI. Defaults to "?model". Could be
+ *     provided as "<info:fedora/cmodel:pid>" if the type of object to query
+ *     should be filtered.
+ *
+ * @return array
+ *   An array containing a number of keys used to describe the query,
+ *   including all the values from $params (which haven't been unset in the
+ *   alter), in addition to:
+ *   - query: The actual query string.
+ *   - type: A string containing the type of query, likely one of:
+ *     - itql; or,
+ *     - sparql.
+ *   - pid: The pid of the collection being queried.
+ */
+function islandora_basic_collection_get_query_info(array $params) {
+  if (!isset($params['object'])) {
+    throw new Exception(t('!function requires "!object_parameter" to be given in the array of parameters.', array(
+      '!function' => __FUNCTION__,
+      '!object_parameter' => 'object',
+    )));
+  }
+
+  // Add in defaults.
+  $params += array(
+    'page_number' => 0,
+    'page_size' => 10,
+    'vars' => '?object ?title',
+    'order_by' => '?title',
+    'model' => '?model',
+  );
+
+  $object = $params['object'];
+
+  $query = <<<EOQ
+SELECT DISTINCT !vars
+FROM <#ri>
+WHERE {
+  !statements .
+  !filters
+}
+EOQ;
+
+  $filters = array();
+  foreach (module_invoke_all('islandora_basic_collection_get_query_filters') as $filter) {
+    $filters[] = "FILTER($filter)";
+  }
+  $query = format_string($query, array(
+    '!statements' => implode(' . ', module_invoke_all('islandora_basic_collection_get_query_statements')),
+    '!filters' => implode(' ', $filters),
+    '!vars' => $params['vars'],
+  ));
+
+  $query = format_string($query, array(
+    '!pid' => $object->id,
+    '!model' => $params['model'],
+  ));
+
+  if ($params['order_by']) {
+    $query .= <<<EOQO
+ORDER BY {$params['order_by']}
+EOQO;
+  }
+
+  $query_array = $params + array(
+    'query' => $query,
+    'type' => 'sparql',
+    'pid' => $object->id,
+  );
+  drupal_alter('islandora_basic_collection_query', $query_array);
+
+  return $query_array;
+}
+
+/**
+ * Implements hook_islandora_basic_collection_get_query_statements().
+ */
+function islandora_basic_collection_islandora_basic_collection_get_query_statements() {
+  return <<<EOQ
+  ?object ?collection_predicate <info:fedora/!pid> ;
+          <fedora-model:label> ?title ;
+          <fedora-model:hasModel> !model ;
+          <fedora-model:state> <fedora-model:Active>
+EOQ;
+}
+
+/**
+ * Implements hook_islandora_basic_collection_get_query_filters().
+ */
+function islandora_basic_collection_islandora_basic_collection_get_query_filters() {
+  return 'sameTerm(?collection_predicate, <fedora-rels-ext:isMemberOfCollection>) || sameTerm(?collection_predicate, <fedora-rels-ext:isMemberOf>)';
+}
+
+/**
  * Get objects associated with this object.
  *
  * Currently, we are only concerned with the with isMemberOf and
@@ -250,46 +376,91 @@ function islandora_basic_collection_islandora_overview_object(AbstractObject $ob
  * @param int $page_size
  *   The number of results per page page from the query for members.
  *
- * @return array
- *   Query results.
+ * @return array|bool
+ *   An array containing two values:
+ *   - An integer representing the total number of tuples which can be
+ *     selected with the given parameters.
+ *   - The tuples in the slice according to $page_number and $page_size.
+ *   or boolean FALSE if the query fails.
  */
-function islandora_basic_collection_get_objects(AbstractObject $object, $page_number = 1, $page_size = 5) {
-  module_load_include('inc', 'islandora', 'includes/utilities');
-  $query = 'SELECT $object $title $content
-     FROM <#ri>
-     WHERE {
-            $object $collection_predicate <info:fedora/' . $object->id . '> ;
-                   <fedora-model:label> $title ;
-                   <fedora-model:hasModel> $content ;
-                   <fedora-model:state> <fedora-model:Active> .
-            FILTER(sameTerm($collection_predicate, <fedora-rels-ext:isMemberOfCollection>) || sameTerm($collection_predicate, <fedora-rels-ext:isMemberOf>))
-            FILTER (!sameTerm($content, <info:fedora/fedora-system:FedoraObject-3.0>))';
-  $enforced = variable_get('islandora_namespace_restriction_enforced', FALSE);
-  if ($enforced) {
-    $namespace_array = islandora_get_allowed_namespaces();
-    $namespace_sparql = implode('|', $namespace_array);
-    $query .= 'FILTER(regex(str(?object), "info:fedora/(' . $namespace_sparql . '):"))';
-  }
-  $query .= '} ORDER BY $title';
-  $query_array = array(
-    'query' => $query,
-    'type' => 'sparql',
-    'pid' => $object->id,
-    // Seems as though this is ignored completely.
-    'page_size' => $page_size,
-    'page_number' => $page_number,
-  );
-  drupal_alter('islandora_basic_collection_query', $query_array);
+function islandora_basic_collection_get_member_objects(AbstractObject $object, $page_number = 0, $page_size = 20) {
+  $query_array = islandora_basic_collection_get_query_info(array_combine(
+    array('object', 'page_number', 'page_size'),
+    func_get_args()
+  ));
+
   try {
+    $count = $object->repository->ri->countQuery($query_array['query'], $query_array['type']);
+
+    $is_itql = strcasecmp('itql', $query_array['type']) === 0;
+
+    if ($is_itql && ($page_number > 0 || $page_size >= 0)) {
+      // Strip the final semi-colon(s) of any itql query, where they exist.
+      $query = trim($query_array['query']);
+      while (strpos($query, -1) == ';') {
+        $query = substr($query, 0, -1);
+      }
+      $query_array['query'] = $query;
+    }
+
+    if ($page_number > 0 && $page_size > 0) {
+      // Add in the offset somehow.
+      $offset = $page_number * $page_size;
+      $query_array['query'] .= " offset $offset";
+    }
+    if ($page_size >= 0) {
+      // Add in the limit somehow.
+      $query_array['query'] .= " limit $page_size";
+    }
+
+    if ($is_itql) {
+      // Add in the final semi-colon.
+      $query_array['query'] .= ';';
+    }
+
     $results = $object->repository->ri->query($query_array['query'], $query_array['type']);
   }
   catch (Exception $e) {
+    return FALSE;
+  }
+  return array($count, $results);
+}
+
+/**
+ * Get objects associated with this object.
+ *
+ * Currently, we are only concerned with the with isMemberOf and
+ * isMemberOfCollection relationships.
+ *
+ * @deprecated
+ *   Deprecated in favour of islandora_basic_collection_get_member_objects(),
+ *   which should actually be able to page through results.
+ *
+ * @param AbstractObject $object
+ *   The collection object whose members will be fetched.
+ * @param int $page_number
+ *   The page number in the query for members.
+ * @param int $page_size
+ *   The number of results per page page from the query for members.
+ *
+ * @return array|string
+ *   The array of query results as provided by
+ *   RepositoryQuery::parseSparqlResults().
+ */
+function islandora_basic_collection_get_objects(AbstractObject $object, $page_number = 0, $page_size = -1) {
+  module_load_include('inc', 'islandora', 'includes/utilities');
+  $message = islandora_deprecated('7.x-1.2', 'Use islandora_basic_collection_get_member_objects() to page and avoid potential memory issues with large collections.');
+  trigger_error(filter_xss($message), E_USER_DEPRECATED);
+
+  $new_results = islandora_basic_collection_get_member_objects($object, $page_number, $page_size);
+  if ($new_results) {
+    return $new_results[1];
+  }
+  else {
     drupal_set_message(t('Error getting related objects for %s', array('%s' => $object->id)), 'error');
     return '';
   }
-  return $results;
 }
-
 /**
  * Get all existing collections.
  *
@@ -462,4 +633,58 @@ function islandora_basic_collection_islandora_ingest_steps_alter(array &$steps, 
       );
     }
   }
+}
+
+/**
+ * Get the content models which can should be treated as collections.
+ *
+ * @return array
+ *   An array of strings, each of which represents the PID of a content model.
+ */
+function islandora_basic_collection_get_collection_content_models() {
+  return array(
+    'islandora:collectionCModel',
+  );
+}
+
+/**
+ * Implements hook_islandora_object_access().
+ *
+ * Maps our three permissions onto those in the Islandora core.
+ */
+function islandora_basic_collection_islandora_object_access($op, $object, $user) {
+  $result = NULL;
+
+  $collection_models = islandora_basic_collection_get_collection_content_models();
+  $is_a_collection = (
+    (count(array_intersect($collection_models, $object->models)) > 0) &&
+    isset($object['COLLECTION_POLICY'])
+  );
+
+  if (in_array($op, array_keys(islandora_basic_collection_permission()))) {
+    if ($is_a_collection) {
+      if ($op == CREATE_CHILD_COLLECTION) {
+        $result = islandora_object_access(FEDORA_INGEST, $object, $user) && islandora_datastream_access(FEDORA_VIEW_OBJECTS, $object['COLLECTION_POLICY'], $user);
+        if ($result) {
+          $policy = new CollectionPolicy($object['COLLECTION_POLICY']->content);
+          $policy_content_models = $policy->getContentModels();
+          $result = count(array_intersect($collection_models, array_keys($policy_content_models))) > 0;
+        }
+      }
+      elseif ($op == MANAGE_COLLECTION_POLICY) {
+        $result = islandora_datastream_access(FEDORA_METADATA_EDIT, $object['COLLECTION_POLICY'], $user);
+      }
+      elseif ($op == MIGRATE_COLLECTION_MEMBERS) {
+        // Not sure how much sense this makes... Check that we can modify the
+        // RELS-EXT of the current object, assuming that we'll be able to modify
+        // the children as well...
+        $result = islandora_datastream_access(FEDORA_METADATA_EDIT, $object['RELS-EXT'], $user);
+      }
+    }
+    else {
+      $result = FALSE;
+    }
+  }
+
+  return $result;
 }

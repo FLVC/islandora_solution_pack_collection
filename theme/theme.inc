@@ -19,8 +19,8 @@ function islandora_basic_collection_preprocess_islandora_basic_collection_wrappe
   $page_number = (empty($_GET['page'])) ? 0 : $_GET['page'];
   $page_size = (empty($_GET['pagesize'])) ? variable_get('islandora_basic_collection_page_size', '10') : $_GET['pagesize'];
   $islandora_object = $variables['islandora_object'];
-  $results = islandora_basic_collection_get_objects($islandora_object, $page_number, $page_size);
-  $total_count = count($results);
+  list($total_count, $results) = islandora_basic_collection_get_member_objects($islandora_object, $page_number, $page_size);
+
   pager_default_initialize($total_count, $page_size);
   $variables['collection_pager'] = theme('pager', array('quantity' => 10));
   $display = (empty($_GET['display'])) ? variable_get('islandora_basic_collection_default_view', 'grid') : $_GET['display'];
@@ -47,11 +47,17 @@ function islandora_basic_collection_preprocess_islandora_basic_collection_wrappe
 
   if ($display == 'grid') {
     $grid_link['attributes']['class'][] = 'active';
-    $collection_content = theme('islandora_basic_collection_grid', array('islandora_object' => $islandora_object, 'collection_results' => $results));
+    $collection_content = theme('islandora_basic_collection_grid', array(
+      'islandora_object' => $islandora_object,
+      'collection_results' => $results,
+     ));
   }
   else {
     $list_link['attributes']['class'][] = 'active';
-    $collection_content = theme('islandora_basic_collection', array('islandora_object' => $islandora_object, 'collection_results' => $results));
+    $collection_content = theme('islandora_basic_collection', array(
+      'islandora_object' => $islandora_object,
+      'collection_results' => $results,
+    ));
   }
 
   $variables['view_links'] = array($grid_link, $list_link);
@@ -109,11 +115,9 @@ function islandora_basic_collection_preprocess_islandora_basic_collection(&$vari
   }
 
   $associated_objects_array = array();
-  $start = $page_size * ($page_number);
-  $end = min($start + $page_size, $total_count);
 
-  for ($i = $start; $i < $end; $i++) {
-    $pid = $results[$i]['object']['value'];
+  foreach ($results as $result) {
+    $pid = $result['object']['value'];
     $fc_object = islandora_object_load($pid);
     if (!is_object($fc_object)) {
       // NULL object so don't show in collection view.
@@ -130,7 +134,7 @@ function islandora_basic_collection_preprocess_islandora_basic_collection(&$vari
     }
     $object_url = 'islandora/object/' . $pid;
 
-    $title = $results[$i]['title']['value'];
+    $title = $result['title']['value'];
     $associated_objects_array[$pid]['pid'] = $pid;
     $associated_objects_array[$pid]['path'] = $object_url;
     $associated_objects_array[$pid]['title'] = $title;
