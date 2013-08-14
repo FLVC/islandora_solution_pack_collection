@@ -52,7 +52,7 @@ function islandora_basic_collection_menu() {
  *
  * @param AbstractObject $object
  *   The object to test if we're allowed to ingest... Check that it actually
- *   a collection and we have sufficient info to show the form.
+ *   is a collection and we have sufficient info to show the form.
  *
  * @return bool
  *   TRUE if $object represents a collection, we can show the ingest form and
@@ -84,7 +84,6 @@ function islandora_basic_collection_menu_alter(array &$items) {
   // We want to add more permissions to the access arguments for the manage tab.
   $current_access_arguments = $items['islandora/object/%islandora_object/manage']['access arguments'][0];
   $new_access_arguments = array(
-    CREATE_CHILD_COLLECTION,
     MANAGE_COLLECTION_POLICY,
     MIGRATE_COLLECTION_MEMBERS,
   );
@@ -136,7 +135,6 @@ function islandora_basic_collection_manage_access($object = NULL) {
   $is_a_collection = count(array_intersect($collection_models, $object->models)) > 0;
 
   return $is_a_collection && (
-    islandora_object_access(CREATE_CHILD_COLLECTION, $object) ||
     islandora_object_access(MANAGE_COLLECTION_POLICY, $object) ||
     islandora_object_access(MIGRATE_COLLECTION_MEMBERS, $object) ||
     islandora_object_access(FEDORA_INGEST, $object) ||
@@ -274,6 +272,9 @@ function islandora_basic_collection_islandora_overview_object(AbstractObject $ob
  *   - model: A string representing a URI. Defaults to "?model". Could be
  *     provided as "<info:fedora/cmodel:pid>" if the type of object to query
  *     should be filtered.
+ * @param string $type
+ *   Either 'view' or 'manage', its meant to repersent how the objects will be
+ *   used.
  *
  * @return array
  *   An array containing a number of keys used to describe the query,
@@ -285,7 +286,7 @@ function islandora_basic_collection_islandora_overview_object(AbstractObject $ob
  *     - sparql.
  *   - pid: The pid of the collection being queried.
  */
-function islandora_basic_collection_get_query_info(array $params) {
+function islandora_basic_collection_get_query_info(array $params, $type = 'view') {
   if (!isset($params['object'])) {
     throw new Exception(t('!function requires "!object_parameter" to be given in the array of parameters.', array(
       '!function' => __FUNCTION__,
@@ -314,11 +315,11 @@ WHERE {
 EOQ;
 
   $filters = array();
-  foreach (module_invoke_all('islandora_basic_collection_get_query_filters') as $filter) {
+  foreach (module_invoke_all('islandora_basic_collection_get_query_filters', $type) as $filter) {
     $filters[] = "FILTER($filter)";
   }
   $query = format_string($query, array(
-    '!statements' => implode(' . ', module_invoke_all('islandora_basic_collection_get_query_statements')),
+    '!statements' => implode(' . ', module_invoke_all('islandora_basic_collection_get_query_statements', $type)),
     '!filters' => implode(' ', $filters),
     '!vars' => $params['vars'],
   ));
@@ -375,6 +376,9 @@ function islandora_basic_collection_islandora_basic_collection_get_query_filters
  *   The page number in the query for members.
  * @param int $page_size
  *   The number of results per page page from the query for members.
+ * @param string $type
+ *   Either 'view' or 'manage', its meant to repersent how the objects will be
+ *   used.
  *
  * @return array|bool
  *   An array containing two values:
@@ -383,12 +387,11 @@ function islandora_basic_collection_islandora_basic_collection_get_query_filters
  *   - The tuples in the slice according to $page_number and $page_size.
  *   or boolean FALSE if the query fails.
  */
-function islandora_basic_collection_get_member_objects(AbstractObject $object, $page_number = 0, $page_size = 20) {
-  $query_array = islandora_basic_collection_get_query_info(array_combine(
-    array('object', 'page_number', 'page_size'),
-    func_get_args()
-  ));
-
+function islandora_basic_collection_get_member_objects(AbstractObject $object, $page_number = 0, $page_size = 20, $type = 'view') {
+  $query_array = islandora_basic_collection_get_query_info(array(
+                   'object' => $object,
+                   'page_number' => $page_number,
+                   'page_size' => $page_size), $type);
   try {
     $count = $object->repository->ri->countQuery($query_array['query'], $query_array['type']);
 
@@ -687,4 +690,32 @@ function islandora_basic_collection_islandora_object_access($op, $object, $user)
   }
 
   return $result;
+}
+
+/**
+ * Implements hook_islandora_ingest_steps().
+ */
+function islandora_basic_collection_islandora_collectioncmodel_islandora_ingest_steps() {
+  return array(
+    'islandora_basic_collection' => array(
+      'weight' => -11,
+      'type' => 'form',
+      'form_id' => 'islandora_basic_collection_create_child_collection_form',
+      'module' => 'islandora_basic_collection',
+      'file' => 'includes/manage_collection.inc',
+    ),
+  );
+}
+
+/**
+ * Implements hook_CMODEL_PID_islandora_object_ingested().
+ */
+function islandora_basic_collection_islandora_collectioncmodel_islandora_object_ingested(AbstractObject $fedora_object) {
+
+  // Add TN datastream.
+  $thumbnail_datastream = $fedora_object->constructDatastream('TN');
+  $thumbnail_datastream->setContentFromFile(drupal_get_path('module', 'islandora_basic_collection') . '/images/folder.png', FALSE);
+  $thumbnail_datastream->label = 'Thumbnail';
+  $thumbnail_datastream->mimetype = 'image/png';
+  $fedora_object->ingestDatastream($thumbnail_datastream);
 }

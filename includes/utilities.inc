@@ -70,8 +70,8 @@ function islandora_basic_collection_get_namespace_form_element($default_value) {
   $restrict_namespace = variable_get('islandora_namespace_restriction_enforced', FALSE);
   return array(
     '#type' => $restrict_namespace ? 'select' : 'textfield',
-    '#title' => 'Collection namespace',
-    '#description' => t('Namespace for objects in this collection.'),
+    '#title' => 'Children namespace',
+    '#description' => t('Namespace for objects with selected content models.'),
     '#size' => 15,
     '#options' => $restrict_namespace ? drupal_map_assoc(islandora_get_allowed_namespaces()) : NULL,
     '#default_value' => $default_value,
@@ -96,7 +96,7 @@ function islandora_basic_collection_get_children_select_table_form_element(Abstr
   // states otherwise.
   $limit = 100;
   $page = pager_find_page($pager_options['element']);
-  list($count, $results) = islandora_basic_collection_get_member_objects($object, $page, $limit);
+  list($count, $results) = islandora_basic_collection_get_member_objects($object, $page, $limit, 'manage');
   $page = pager_default_initialize($count, $limit, $pager_options['element']);
   $rows = array();
   foreach ($results as $result) {
@@ -180,10 +180,12 @@ function islandora_basic_collection_get_parent_pids(AbstractObject $object) {
 }
 
 /**
- * Gets a list of all parent pids exluding the given parent.
+ * Gets a list of all parent pids excluding the given parent.
  *
  * @param AbstractObject $object
  *   The object.
+ * @param AbstractObject $parent
+ *   The parent of the object.
  *
  * @return array
  *   The list of parent PIDs.

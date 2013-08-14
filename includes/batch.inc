@@ -28,6 +28,9 @@ function islandora_basic_collection_start_operation(array $operands, array &$con
  *
  * @param array $context
  *   The context of this batch operation.
+ *
+ * @return bool
+ *   TRUE or FALSE depending on the context of the batch.
  */
 function islandora_basic_collection_end_operation(array &$context) {
   $context['sandbox']['progress']++;
@@ -60,8 +63,9 @@ function islandora_basic_collection_batch_finished($success, $results, $operatio
  *
  * @param AbstractObject $collection
  *   The collection object to purge the children from.
- * @param array $children
- *   The PID's of the children to delete, if NULL delete all child objects.
+ * @param mixed $children
+ *   An array of PID's of the children to delete.  Defualts to NULL.  If NULL
+ *   all children will be deleted.
  *
  * @return array
  *   The batch definition.
@@ -214,21 +218,17 @@ function islandora_basic_collection_delete_all_children_batch_operation(Abstract
 /**
  * Migrate the given child objects from the source to destination collection.
  *
- * If no child objects are given its assumed all child objects are to be
- * migrated.
- *
  * @param AbstractObject $source
  *   The source collection object.
  * @param AbstractObject $destination
  *   The destination collection object.
  * @param array $children
- *   The PID's of the children to migrate, if NULL migrate all child objects.
+ *   The PID's of the children to migrate.
  *
  * @return array
  *   The batch definition.
  */
-function islandora_basic_collection_migrate_children_batch(AbstractObject $source, AbstractObject $destination, $children = NULL) {
-  $children = is_array($children) ? $children : islandora_basic_collection_get_child_pids($collection);
+function islandora_basic_collection_migrate_children_batch(AbstractObject $source, AbstractObject $destination, array $children) {
   $parameters = array($source, $destination, $children);
   $migrate_operation = array('islandora_basic_collection_migrate_children_batch_operation', $parameters);
   $message_parameters = array('@source' => $source->label, '@destination' => $destination->label);
@@ -278,21 +278,17 @@ function islandora_basic_collection_migrate_children_batch_operation(AbstractObj
 /**
  * Share the given child objects from the source with destination collection.
  *
- * If no child objects are given its assumed all child objects are to be
- * shared.
- *
  * @param AbstractObject $source
  *   The source collection object.
  * @param AbstractObject $destination
  *   The destination collection object.
  * @param array $children
- *   The PID's of the children to share, if NULL share all child objects.
+ *   The PID's of the children to share.
  *
  * @return array
  *   The batch definition.
  */
-function islandora_basic_collection_share_children_batch(AbstractObject $source, AbstractObject $destination, $children = NULL) {
-  $children = is_array($children) ? $children : islandora_basic_collection_get_child_pids($collection);
+function islandora_basic_collection_share_children_batch(AbstractObject $source, AbstractObject $destination, array $children) {
   $parameters = array($source, $destination, $children);
   $copy_operation = array('islandora_basic_collection_share_children_batch_operation', $parameters);
   $message_parameters = array('@source' => $source->label, '@destination' => $destination->label);
