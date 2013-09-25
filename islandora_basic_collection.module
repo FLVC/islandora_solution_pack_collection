@@ -480,7 +480,7 @@ function islandora_basic_collection_get_collections() {
             $object <fedora-model:label> $label and
             $object <info:fedora/fedora-system:def/model#hasModel> <info:fedora/islandora:collectionCModel> and
             $object <fedora-model:state> <info:fedora/fedora-system:def/model#Active>)
-            order by $label';
+            order by $object';
   $results = $tuque->repository->ri->itqlQuery($query, 'unlimited');
   $collections = array();
   foreach ($results as $result) {
@@ -488,7 +488,7 @@ function islandora_basic_collection_get_collections() {
     if (islandora_namespace_accessible($pid)) {
       $collections[$pid] = array(
         'pid' => $pid,
-        'label' => $result['label']['value'],
+        'label' => str_replace('info\:fedora\/', '', $pid) . ' / ' . $result['label']['value'],
       );
     }
   }
