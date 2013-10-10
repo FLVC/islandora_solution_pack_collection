@@ -6,9 +6,16 @@
  */
 
 // Constants.
-define('CREATE_CHILD_COLLECTION', 'create child collection');
-define('MANAGE_COLLECTION_POLICY', 'manage collection policy');
-define('MIGRATE_COLLECTION_MEMBERS', 'migrate collection members');
+define('ISLANDORA_BASIC_COLLECTION_CREATE_CHILD_COLLECTION', 'create child collection');
+define('ISLANDORA_BASIC_COLLECTION_MANAGE_COLLECTION_POLICY', 'manage collection policy');
+define('ISLANDORA_BASIC_COLLECTION_MIGRATE_COLLECTION_MEMBERS', 'migrate collection members');
+
+// @codingStandardsIgnoreStart
+// XXX: These should be removed at somepoint in the future.
+define('CREATE_CHILD_COLLECTION', ISLANDORA_BASIC_COLLECTION_CREATE_CHILD_COLLECTION);
+define('MANAGE_COLLECTION_POLICY', ISLANDORA_BASIC_COLLECTION_MANAGE_COLLECTION_POLICY);
+define('MIGRATE_COLLECTION_MEMBERS', ISLANDORA_BASIC_COLLECTION_MIGRATE_COLLECTION_MEMBERS);
+// @codingStandardsIgnoreEnd
 
 /**
  * Implements hook_menu().
@@ -74,7 +81,7 @@ function islandora_basic_collection_ingest_access(AbstractObject $object) {
   $configuration = islandora_basic_collection_get_ingest_configuration($object);
   $has_ingest_steps = islandora_ingest_can_display_ingest_form($configuration);
 
-  return $has_ingest_steps && islandora_object_access(FEDORA_INGEST, $object);
+  return $has_ingest_steps && islandora_object_access(ISLANDORA_INGEST, $object);
 }
 
 /**
@@ -84,8 +91,8 @@ function islandora_basic_collection_menu_alter(array &$items) {
   // We want to add more permissions to the access arguments for the manage tab.
   $current_access_arguments = $items['islandora/object/%islandora_object/manage']['access arguments'][0];
   $new_access_arguments = array(
-    MANAGE_COLLECTION_POLICY,
-    MIGRATE_COLLECTION_MEMBERS,
+    ISLANDORA_BASIC_COLLECTION_MANAGE_COLLECTION_POLICY,
+    ISLANDORA_BASIC_COLLECTION_MIGRATE_COLLECTION_MEMBERS,
   );
   $new_access_arguments = array_merge($current_access_arguments, $new_access_arguments);
   $items['islandora/object/%islandora_object/manage']['access arguments'] = array($new_access_arguments, 2);
@@ -135,10 +142,10 @@ function islandora_basic_collection_manage_access($object = NULL) {
   $is_a_collection = count(array_intersect($collection_models, $object->models)) > 0;
 
   return $is_a_collection && (
-    islandora_object_access(MANAGE_COLLECTION_POLICY, $object) ||
-    islandora_object_access(MIGRATE_COLLECTION_MEMBERS, $object) ||
-    islandora_object_access(FEDORA_INGEST, $object) ||
-    islandora_object_access(FEDORA_PURGE, $object)
+    islandora_object_access(ISLANDORA_BASIC_COLLECTION_MANAGE_COLLECTION_POLICY, $object) ||
+    islandora_object_access(ISLANDORA_BASIC_COLLECTION_MIGRATE_COLLECTION_MEMBERS, $object) ||
+    islandora_object_access(ISLANDORA_INGEST, $object) ||
+    islandora_object_access(ISLANDORA_PURGE, $object)
   );
 }
 
@@ -315,11 +322,15 @@ WHERE {
 EOQ;
 
   $filters = array();
-  foreach (module_invoke_all('islandora_basic_collection_get_query_filters', $type) as $filter) {
+  $query_filters = module_invoke_all('islandora_basic_collection_get_query_filters', $type);
+  $query_statements = module_invoke_all('islandora_basic_collection_get_query_statements', $type);
+  drupal_alter('islandora_basic_collection_query_param', $query_filters, $query_statements, $params);
+
+  foreach ($query_filters as $filter) {
     $filters[] = "FILTER($filter)";
   }
   $query = format_string($query, array(
-    '!statements' => implode(' . ', module_invoke_all('islandora_basic_collection_get_query_statements', $type)),
+    '!statements' => implode(' . ', $query_statements),
     '!filters' => implode(' ', $filters),
     '!vars' => $params['vars'],
   ));
@@ -348,19 +359,24 @@ EOQO;
 /**
  * Implements hook_islandora_basic_collection_get_query_statements().
  */
-function islandora_basic_collection_islandora_basic_collection_get_query_statements() {
-  return <<<EOQ
-  ?object ?collection_predicate <info:fedora/!pid> ;
-          <fedora-model:label> ?title ;
-          <fedora-model:hasModel> !model ;
-          <fedora-model:state> <fedora-model:Active>
+function islandora_basic_collection_islandora_basic_collection_get_query_statements($type = 'view') {
+  $to_return = array();
+  $to_return[] = <<<EOQ
+?object ?collection_predicate <info:fedora/!pid> ;
+        <fedora-model:label> ?title ;
+        <fedora-model:hasModel> !model
 EOQ;
+
+  if ($type == 'view') {
+    $to_return[] = '?object <fedora-model:state> <fedora-model:Active>';
+  }
+  return $to_return;
 }
 
 /**
  * Implements hook_islandora_basic_collection_get_query_filters().
  */
-function islandora_basic_collection_islandora_basic_collection_get_query_filters() {
+function islandora_basic_collection_islandora_basic_collection_get_query_filters($type) {
   return 'sameTerm(?collection_predicate, <fedora-rels-ext:isMemberOfCollection>) || sameTerm(?collection_predicate, <fedora-rels-ext:isMemberOf>)';
 }
 
@@ -379,6 +395,8 @@ function islandora_basic_collection_islandora_basic_collection_get_query_filters
  * @param string $type
  *   Either 'view' or 'manage', its meant to repersent how the objects will be
  *   used.
+ * @param string $cmodel
+ *   The content model in which to explicitly select.
  *
  * @return array|bool
  *   An array containing two values:
@@ -387,11 +405,17 @@ function islandora_basic_collection_islandora_basic_collection_get_query_filters
  *   - The tuples in the slice according to $page_number and $page_size.
  *   or boolean FALSE if the query fails.
  */
-function islandora_basic_collection_get_member_objects(AbstractObject $object, $page_number = 0, $page_size = 20, $type = 'view') {
-  $query_array = islandora_basic_collection_get_query_info(array(
-                   'object' => $object,
-                   'page_number' => $page_number,
-                   'page_size' => $page_size), $type);
+function islandora_basic_collection_get_member_objects(AbstractObject $object, $page_number = 0, $page_size = 20, $type = 'view', $cmodel = NULL) {
+  $params = array(
+    'object' => $object,
+    'page_number' => $page_number,
+    'page_size' => $page_size,
+  );
+
+  if (isset($cmodel)) {
+    $params['model'] = "<info:fedora/$cmodel>";
+  }
+  $query_array = islandora_basic_collection_get_query_info($params, $type);
   try {
     $count = $object->repository->ri->countQuery($query_array['query'], $query_array['type']);
 
@@ -511,15 +535,15 @@ function islandora_basic_collection_islandora_undeletable_datastreams($models) {
  */
 function islandora_basic_collection_permission() {
   return array(
-    CREATE_CHILD_COLLECTION => array(
+    ISLANDORA_BASIC_COLLECTION_CREATE_CHILD_COLLECTION => array(
       'title' => t('Create child collections'),
       'description' => t('Create new collections within an existing collection.'),
     ),
-    MANAGE_COLLECTION_POLICY => array(
+    ISLANDORA_BASIC_COLLECTION_MANAGE_COLLECTION_POLICY => array(
       'title' => t('Manage collection policies'),
       'description' => t('Define which content models are available for each collection.'),
     ),
-    MIGRATE_COLLECTION_MEMBERS => array(
+    ISLANDORA_BASIC_COLLECTION_MIGRATE_COLLECTION_MEMBERS => array(
       'title' => t('Migrate collection members'),
       'description' => t('Move objects from one collection to another.'),
     ),
@@ -666,22 +690,22 @@ function islandora_basic_collection_islandora_object_access($op, $object, $user)
 
   if (in_array($op, array_keys(islandora_basic_collection_permission()))) {
     if ($is_a_collection) {
-      if ($op == CREATE_CHILD_COLLECTION) {
-        $result = islandora_object_access(FEDORA_INGEST, $object, $user) && islandora_datastream_access(FEDORA_VIEW_OBJECTS, $object['COLLECTION_POLICY'], $user);
+      if ($op == ISLANDORA_BASIC_COLLECTION_CREATE_CHILD_COLLECTION) {
+        $result = islandora_object_access(ISLANDORA_INGEST, $object, $user) && islandora_datastream_access(ISLANDORA_VIEW_OBJECTS, $object['COLLECTION_POLICY'], $user);
         if ($result) {
           $policy = new CollectionPolicy($object['COLLECTION_POLICY']->content);
           $policy_content_models = $policy->getContentModels();
           $result = count(array_intersect($collection_models, array_keys($policy_content_models))) > 0;
         }
       }
-      elseif ($op == MANAGE_COLLECTION_POLICY) {
-        $result = islandora_datastream_access(FEDORA_METADATA_EDIT, $object['COLLECTION_POLICY'], $user);
+      elseif ($op == ISLANDORA_BASIC_COLLECTION_MANAGE_COLLECTION_POLICY) {
+        $result = islandora_datastream_access(ISLANDORA_METADATA_EDIT, $object['COLLECTION_POLICY'], $user);
       }
-      elseif ($op == MIGRATE_COLLECTION_MEMBERS) {
+      elseif ($op == ISLANDORA_BASIC_COLLECTION_MIGRATE_COLLECTION_MEMBERS) {
         // Not sure how much sense this makes... Check that we can modify the
         // RELS-EXT of the current object, assuming that we'll be able to modify
         // the children as well...
-        $result = islandora_datastream_access(FEDORA_METADATA_EDIT, $object['RELS-EXT'], $user);
+        $result = islandora_datastream_access(ISLANDORA_METADATA_EDIT, $object['RELS-EXT'], $user);
       }
     }
     else {
