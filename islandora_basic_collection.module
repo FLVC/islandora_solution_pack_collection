@@ -507,13 +507,17 @@ function islandora_basic_collection_get_collections() {
             order by $object';
   $results = $tuque->repository->ri->itqlQuery($query, 'unlimited');
   $collections = array();
+  $root = variable_get('islandora_repository_pid', 'islandora:root');
+  $root_namespace = islandora_get_namespace($root);
   foreach ($results as $result) {
     $pid = $result['object']['value'];
     if (islandora_namespace_accessible($pid)) {
+     if (($root_namespace == 'islandora')||(islandora_get_namespace($pid) == $root_namespace)||(islandora_get_namespace($pid)  == 'palmm')) {
       $collections[$pid] = array(
         'pid' => $pid,
         'label' => str_replace('info\:fedora\/', '', $pid) . ' / ' . $result['label']['value'],
       );
+     }
     }
   }
   return $collections;
