@@ -49,6 +49,31 @@ function islandora_basic_collection_menu() {
       'access callback' => 'islandora_basic_collection_manage_access',
       'access arguments' => array(2),
     ),
+    'islandora/basic_collection/find_collections' => array(
+      'title' => 'Autocomplete Collection Search',
+      'page callback' => 'islandora_basic_collection_get_collections_filtered',
+      'type' => MENU_CALLBACK,
+      'file' => 'includes/utilities.inc',
+      'access arguments' => array(ISLANDORA_BASIC_COLLECTION_MIGRATE_COLLECTION_MEMBERS),
+    ),
+    'islandora/object/%islandora_object/manage/object/share' => array(
+      'title' => 'Share this Object with another collection',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('islandora_basic_collection_share_item_form', 2),
+      'type' => MENU_LOCAL_ACTION,
+      'file' => 'includes/share.form.inc',
+      'access callback' => 'islandora_basic_collection_share_migrate_access',
+      'access arguments' => array(2),
+    ),
+    'islandora/object/%islandora_object/manage/object/migrate' => array(
+      'title' => 'Migrate this Object to another collection',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('islandora_basic_collection_migrate_item_form', 2),
+      'type' => MENU_LOCAL_ACTION,
+      'file' => 'includes/migrate.form.inc',
+      'access callback' => 'islandora_basic_collection_share_migrate_access',
+      'access arguments' => array(2),
+    ),
     'islandora/object/%islandora_object/manage/collection/ingest' => $ingest_object_menu_item,
     'islandora/object/%islandora_object/manage/overview/ingest' => $ingest_object_menu_item,
   );
@@ -82,6 +107,30 @@ function islandora_basic_collection_ingest_access(AbstractObject $object) {
   $has_ingest_steps = islandora_ingest_can_display_ingest_form($configuration);
 
   return $has_ingest_steps && islandora_object_access(ISLANDORA_INGEST, $object);
+}
+
+/**
+ * Access callback for share/migrate.
+ *
+ * @param AbstractObject $object
+ *   The object to test if we're allowed to ingest... Check that it actually
+ *   is a collection and we have sufficient info to show the form.
+ *
+ * @return bool
+ *   TRUE if $object represents a collection, we can show the form and
+ *   we have permission to manage object; otherwise, FALSE.
+ */
+function islandora_basic_collection_share_migrate_access(AbstractObject $object) {
+  $collection_models = islandora_basic_collection_get_collection_content_models();
+  $is_a_collection = (
+    (count(array_intersect($collection_models, $object->models)) > 0) &&
+    isset($object['COLLECTION_POLICY'])
+  );
+
+  if ($is_a_collection) {
+    return FALSE;
+  }
+  return islandora_object_access(ISLANDORA_MANAGE_PROPERTIES, $object);
 }
 
 /**
@@ -215,12 +264,21 @@ function islandora_basic_collection_islandora_collectionCModel_islandora_overvie
       'model' => "<info:fedora/$model_pid>",
     ));
     $model_object = islandora_object_load($model_pid);
-    $rows[$model_pid] = array(
-      ($model_object ?
-        l($model_object->label, "islandora/object/{$model_object->id}") :
-        $model_pid),
-      $object->repository->ri->countQuery($model_count_query['query'], $model_count_query['type']),
-    );
+    if (variable_get('islandora_basic_collection_disable_count_object', FALSE)) {
+      $rows[$model_pid] = array(
+        ($model_object ?
+            l($model_object->label, "islandora/object/{$model_object->id}") :
+            $model_pid),
+      );
+    }
+    else {
+      $rows[$model_pid] = array(
+        ($model_object ?
+            l($model_object->label, "islandora/object/{$model_object->id}") :
+            $model_pid),
+        $object->repository->ri->countQuery($model_count_query['query'], $model_count_query['type']),
+      );
+    }
   }
 
   list($total_count, $all_results) = islandora_basic_collection_get_member_objects($object, 0, 0);
@@ -236,6 +294,10 @@ function islandora_basic_collection_islandora_collectionCModel_islandora_overvie
       '#rows' => $rows,
       '#empty' => t('Collection is empty.')),
   );
+  if (variable_get('islandora_basic_collection_disable_count_object', FALSE)) {
+    unset($content['total']);
+    unset($content['table']['#header']['count']);
+  }
   return array(
     'collection' => drupal_render($content),
   );
@@ -305,7 +367,7 @@ function islandora_basic_collection_get_query_info(array $params, $type = 'view'
   $params += array(
     'page_number' => 0,
     'page_size' => 10,
-    'vars' => '?object ?title',
+    'vars' => '?object ?title ?owner ?date_modified',
     'order_by' => '?title',
     'model' => '?model',
   );
@@ -352,7 +414,6 @@ EOQO;
     'pid' => $object->id,
   );
   drupal_alter('islandora_basic_collection_query', $query_array);
-
   return $query_array;
 }
 
@@ -364,6 +425,8 @@ function islandora_basic_collection_islandora_basic_collection_get_query_stateme
   $to_return[] = <<<EOQ
 ?object ?collection_predicate <info:fedora/!pid> ;
         <fedora-model:label> ?title ;
+        <fedora-model:ownerId> ?owner ;
+        <fedora-view:lastModifiedDate> ?date_modified ;
         <fedora-model:hasModel> !model
 EOQ;
 
@@ -417,8 +480,7 @@ function islandora_basic_collection_get_member_objects(AbstractObject $object, $
   }
   $query_array = islandora_basic_collection_get_query_info($params, $type);
   try {
-    $count = $object->repository->ri->countQuery($query_array['query'], $query_array['type']);
-
+    $count = variable_get('islandora_basic_collection_disable_count_object', FALSE) ? 0 : $object->repository->ri->countQuery($query_array['query'], $query_array['type']);
     $is_itql = strcasecmp('itql', $query_array['type']) === 0;
 
     if ($is_itql && ($page_number > 0 || $page_size >= 0)) {
@@ -448,6 +510,14 @@ function islandora_basic_collection_get_member_objects(AbstractObject $object, $
     $results = $object->repository->ri->query($query_array['query'], $query_array['type']);
   }
   catch (Exception $e) {
+    $variables = array(
+      '@message' => $e->getMessage(),
+      '@stack' => $e->getTraceAsString(),
+    );
+    watchdog('islandora_basic_collection',
+     'Islandora basic collection failed to retrieve associated objects.<br/>Error:<br/>@message<br/>Stack: <br/>@stack',
+      $variables,
+      WATCHDOG_ERROR);
     return FALSE;
   }
   return array($count, $results);
@@ -488,6 +558,7 @@ function islandora_basic_collection_get_objects(AbstractObject $object, $page_nu
     return '';
   }
 }
+
 /**
  * Get all existing collections.
  *
@@ -501,8 +572,8 @@ function islandora_basic_collection_get_collections() {
   module_load_include('inc', 'islandora', 'includes/utilities');
   $tuque = islandora_get_tuque_connection();
   $query = 'select $object $label from <#ri> where (
-            $object <fedora-model:label> $label and
             $object <info:fedora/fedora-system:def/model#hasModel> <info:fedora/islandora:collectionCModel> and
+            $object <fedora-model:label> $label and
             $object <fedora-model:state> <info:fedora/fedora-system:def/model#Active>)
             order by $object';
   $results = $tuque->repository->ri->itqlQuery($query, 'unlimited');
