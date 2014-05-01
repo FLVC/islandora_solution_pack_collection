@@ -315,9 +315,11 @@ function islandora_basic_collection_islandora_overview_object(AbstractObject $ob
     };
     $pids = islandora_basic_collection_get_parent_pids($object);
     $rows = array_map($map_to_row, $pids);
+    $caption = filter_xss($object->label) . ' - ' . $object->id;
     $table = theme('table', array(
                'header' => array(t('Parent Collections')),
                'rows' => $rows,
+               'caption' => $caption,
                'empty' => t('No parent collections')));
     return array('collection' => $table);
   }
