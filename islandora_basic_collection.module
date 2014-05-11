@@ -283,8 +283,9 @@ function islandora_basic_collection_islandora_collectionCModel_islandora_overvie
 
   list($total_count, $all_results) = islandora_basic_collection_get_member_objects($object, 0, 0);
 
+  $caption = filter_xss($object->label) . ' - ' . $object->id;
   $content = array(
-    'total' => array('#markup' => t('Total members: %total', array('%total' => $total_count))),
+    'total' => array('#markup' => t('%caption - Total members: %total', array('%caption' => $caption, '%total' => $total_count))),
     'table' => array(
       '#theme' => 'table',
       '#header' => array(
