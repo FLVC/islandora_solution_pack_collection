@@ -246,6 +246,7 @@ function islandora_basic_collection_remove_from_collection(AbstractObject $membe
  *   Returns a json array of matching collections.
  */
 function islandora_basic_collection_get_collections_filtered($search_value) {
+  module_load_include('inc', 'islandora', 'includes/utilities');
   $tuque = islandora_get_tuque_connection();
   $sparql_query = <<<EOQ
 SELECT ?pid ?label
@@ -257,11 +258,16 @@ WHERE {
 EOQ;
   $results = $tuque->repository->ri->sparqlQuery($sparql_query);
   $return = array();
+  $root = variable_get('islandora_repository_pid', 'islandora:root');
+  $root_namespace = islandora_get_namespace($root);
   foreach ($results as $objects) {
+   $pid = $objects['pid']['value'];
+   if (($root_namespace == 'islandora')||(islandora_get_namespace($pid) == $root_namespace)||(islandora_get_namespace($pid)  == 'palmm')) {
     $return[$objects['pid']['value']] = t('@label (@pid)', array(
       '@label' => $objects['label']['value'],
       '@pid' => $objects['pid']['value'],
     ));
+   }
   }
   drupal_json_output($return);
 }
