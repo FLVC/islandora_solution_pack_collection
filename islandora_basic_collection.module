@@ -683,7 +683,7 @@ function islandora_basic_collection_get_collections() {
   foreach ($results as $result) {
     $pid = $result['object']['value'];
     if (islandora_namespace_accessible($pid)) {
-     if (($root_namespace == 'islandora')||(islandora_get_namespace($pid) == $root_namespace)||(islandora_get_namespace($pid)  == 'palmm')) {
+     if (($root_namespace == 'islandora')||($root_namespace == 'palmm')||(islandora_get_namespace($pid) == $root_namespace)||(islandora_get_namespace($pid)  == 'palmm')) {
       $collections[$pid] = array(
         'pid' => $pid,
         'label' => str_replace('info\:fedora\/', '', $pid) . ' / ' . $result['label']['value'],

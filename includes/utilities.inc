@@ -227,7 +227,7 @@ EOQ;
   $root_namespace = islandora_get_namespace($root);
   foreach ($results as $objects) {
    $pid = $objects['pid']['value'];
-   if (($root_namespace == 'islandora')||(islandora_get_namespace($pid) == $root_namespace)||(islandora_get_namespace($pid)  == 'palmm')) {
+   if (($root_namespace == 'islandora')||($root_namespace == 'palmm')||(islandora_get_namespace($pid) == $root_namespace)||(islandora_get_namespace($pid)  == 'palmm')) {
     $return[$objects['pid']['value']] = t('@label (@pid)', array(
       '@label' => $objects['label']['value'],
       '@pid' => $objects['pid']['value'],
