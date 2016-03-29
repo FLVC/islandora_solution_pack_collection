@@ -72,7 +72,7 @@ function islandora_basic_collection_get_namespace_form_element($default_value) {
     '#type' => $restrict_namespace ? 'select' : 'textfield',
     '#title' => 'Children namespace',
     '#description' => t('Namespace for objects with selected content models.'),
-    '#size' => 15,
+    '#size' => $restrict_namespace ? 1 : 15,
     '#options' => $restrict_namespace ? drupal_map_assoc(islandora_get_allowed_namespaces()) : NULL,
     '#default_value' => $default_value,
   );
