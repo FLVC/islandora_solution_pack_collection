@@ -434,12 +434,18 @@ function islandora_basic_collection_islandora_collectionCModel_islandora_overvie
  * Implements hook_islandora_view_object().
  */
 function islandora_basic_collection_islandora_overview_object(AbstractObject $object) {
+  module_load_include('inc', 'islandora', 'includes/utilities');
   module_load_include('inc', 'islandora_basic_collection', 'includes/utilities');
   if (!in_array('islandora:collectionCModel', $object->models)) {
     $map_to_row = function($o) {
       $o = islandora_object_load($o);
+      $link_prefix = '';
+      $root_namespace = islandora_get_namespace(variable_get('islandora_repository_pid', 'islandora:root'));
+      if ((islandora_get_namespace($o->id) == 'palmm')&&($root_namespace != 'palmm')) {
+        $link_prefix = 'http://palmm.digital.flvc.org/';
+      }
       return ($o ?
-        array(l($o->label, "islandora/object/{$o->id}")) :
+        array(l($o->label, $link_prefix . "islandora/object/{$o->id}")) :
         FALSE);
     };
     $pids = islandora_basic_collection_get_parent_pids($object);
