@@ -56,6 +56,10 @@ function islandora_basic_collection_share_item_form_validate($form, &$form_state
     form_set_error('new_collection_name', t('Not a valid collection'));
   }
   $has_ingest_permissions = islandora_object_access(ISLANDORA_INGEST, $new_collection);
+  if ((!$has_ingest_permissions)&&(islandora_get_namespace($new_collection->id)  == 'palmm')) {
+    $object = islandora_object_load($form_state['basic_collection_share']);
+    $has_ingest_permissions = islandora_object_access(ISLANDORA_METADATA_EDIT, $object);
+  }
   if (!$has_ingest_permissions) {
     form_set_error('new_collection_name', t('You do not have permission to ingest objects to this collection'));
   }
