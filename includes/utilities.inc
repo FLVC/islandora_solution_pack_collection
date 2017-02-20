@@ -94,7 +94,7 @@ function islandora_basic_collection_get_namespace_form_element($default_value) {
 function islandora_basic_collection_get_children_select_table_form_element(AbstractObject $object, array $pager_options) {
   // Assumes all results are returned although the function description
   // states otherwise.
-  $limit = 10;
+  $limit = variable_get('islandora_basic_collection_admin_page_size', 10);
   $page = pager_find_page($pager_options['element']);
   list($count, $results) = islandora_basic_collection_get_member_objects($object, $page, $limit, 'manage');
   $page = pager_default_initialize($count, $limit, $pager_options['element']);
@@ -121,11 +121,8 @@ function islandora_basic_collection_get_children_select_table_form_element(Abstr
           '#title' => $label,
           '#href' => "islandora/object/{$pid}")));
   }
-  // Theme pager doesn't support url fragments in D7 so we insert manually.
-  $pager = theme('pager', array('quantity' => 10, 'element' => $pager_options['element']));
-  $pattern = '/href="([^"]+)"/';
-  $replace = 'href="\1' . $pager_options['fragment'] . '"';
-  $pager = preg_replace($pattern, $replace, $pager);
+  $pager = theme('pager', array('quantity' => $limit, 'element' => $pager_options['element']));
+  $pager = islandora_basic_collection_append_fragment_to_pager_url($pager, $pager_options['fragment']);
   return array(
     '#type' => 'tableselect',
     '#header' => array(
@@ -240,4 +237,24 @@ function islandora_basic_collection_display_query_sparql($collection_object, $pa
     return $result['object']['value'];
   };
   return array($total, array_map($map_to_pids, $results));
+}
+
+/**
+ * Helper function to add fragment identifiers to pager URLs.
+ *
+ * Theme pager doesn't support url fragments in D7 so we insert manually.
+ *
+ * @param string $pager
+ *   The pager markup to be rendered.
+ * @param string $fragment
+ *   The fragment identifier to be appended.
+ *
+ * @return string
+ *   The pager markup to be rendered with fragment.
+ */
+function islandora_basic_collection_append_fragment_to_pager_url($pager, $fragment) {
+  $pattern = '/href="([^"]+)"/';
+  $replace = format_string('href="\1!fragment"', array('!fragment' => $fragment));
+  $pager = preg_replace($pattern, $replace, $pager);
+  return $pager;
 }
