@@ -2,7 +2,7 @@
 
 /**
  * @file
- * This file contains all install functions
+ * This file contains all install functions.
  */
 
 /**
@@ -22,6 +22,7 @@ function islandora_basic_collection_uninstall() {
   module_load_include('inc', 'islandora', 'includes/solution_packs');
   islandora_install_solution_pack('islandora_basic_collection', 'uninstall');
   $variables = array(
+    'islandora_basic_collection_metadata_info_table_drag_attributes',
     'islandora_basic_collection_generate_uuid',
     'islandora_basic_collection_page_size',
     'islandora_basic_collection_disable_collection_policy_delete',
@@ -32,6 +33,8 @@ function islandora_basic_collection_uninstall() {
     'islandora_basic_collection_object_count_listing_phrase',
     'islandora_basic_collection_object_count_listing_placeholder',
     'islandora_basic_collection_display_backend',
+    'islandora_basic_collection_disable_display_generation',
+    'islandora_basic_collection_admin_page_size',
   );
   array_walk($variables, 'variable_del');
 }
