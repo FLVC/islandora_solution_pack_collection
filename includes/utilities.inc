@@ -96,7 +96,7 @@ function islandora_basic_collection_get_children_select_table_form_element(Abstr
   // states otherwise.
   $limit = variable_get('islandora_basic_collection_admin_page_size', 10);
   $page = pager_find_page($pager_options['element']);
-  list($count, $results) = islandora_basic_collection_get_member_objects($object, $page, $limit, 'manage');
+  list($count, $results) = islandora_basic_collection_get_member_objects($object, $page, $limit, 'view');
   $page = pager_default_initialize($count, $limit, $pager_options['element']);
   $rows = array();
   foreach ($results as $result) {
