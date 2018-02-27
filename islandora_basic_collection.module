@@ -231,9 +231,17 @@ function islandora_basic_collection_theme($existing, $type, $theme, $path) {
  * Implements hook_CMODEL_PID_islandora_view_object().
  */
 function islandora_basic_collection_islandora_collectionCModel_islandora_view_object(AbstractObject $object) {
+  $disable_if_empty = variable_get('islandora_basic_collection_disable_display_generation_for_empty_collections', FALSE);
+  $child_count = 0;
+  if ($disable_if_empty) {
+    list($child_count, $all_results) = islandora_basic_collection_get_member_objects($object, 0, 0);
+  }
   /* completely disable view of object */
   $disable = variable_get('islandora_basic_collection_disable_display_generation', FALSE);
   if ($disable) {
+    $to_return = array('Collection View' => '');
+  }
+  else if ($disable_if_empty && $child_count == 0) {
     $to_return = array('Collection View' => '');
   }
   else {

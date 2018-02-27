@@ -68,6 +68,12 @@ function islandora_basic_collection_admin(array $form, array &$form_state) {
       '#default_value' => variable_get('islandora_basic_collection_disable_display_generation', FALSE),
       '#description' => t("Disabling display generation allows for alternate collection displays to be used."),
     ),
+    'islandora_basic_collection_disable_display_generation_for_empty_collections' => array(
+      '#type' => 'checkbox',
+      '#title' => t('Disable default collection display generation for empty collections.'),
+      '#default_value' => variable_get('islandora_basic_collection_disable_display_generation_for_empty_collections', FALSE),
+      '#description' => t("Disable display generation for empty collections."),
+    ),
     'islandora_basic_collection_admin_page_size' => array(
       '#type' => 'textfield',
       '#title' => t('Objects per page during collection management'),
