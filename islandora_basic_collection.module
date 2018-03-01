@@ -447,6 +447,7 @@ function islandora_basic_collection_islandora_collectionCModel_islandora_overvie
       'object' => $object,
       'page_size' => -1,
       'page_number' => 0,
+      'vars' => '?object',
       'order_by' => FALSE,
       'model' => "<info:fedora/$model_pid>",
     ));
@@ -470,7 +471,15 @@ function islandora_basic_collection_islandora_collectionCModel_islandora_overvie
       '#empty' => t('Collection is empty.')),
   );
   if (!$disable_count) {
-    list($total_count, $all_results) = islandora_basic_collection_get_member_objects($object, 0, 0);
+    $total_count_query = islandora_basic_collection_get_query_info(array(
+      'object' => $object,
+      'page_size' => -1,
+      'page_number' => 0,
+      'vars' => '?object',
+      'order_by' => FALSE,
+    ));
+    $total_count = $object->repository->ri->countQuery($total_count_query['query'], $total_count_query['type']);
+    //list($total_count, $all_results) = islandora_basic_collection_get_member_objects($object, 0, 0);
     $content['total'] = array('#markup' => t('%caption - Total members: %total', array('%caption' => $caption, '%total' => $total_count)));
     $content['table']['#header']['count'] = array('data' => t('Count'));
   }
