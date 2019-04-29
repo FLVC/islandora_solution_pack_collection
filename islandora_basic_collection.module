@@ -384,9 +384,9 @@ function islandora_basic_collection_islandora_basic_collection_query_backends() 
 }
 
 /**
- * Implements hook_islandora_xml_form_builder_forms().
+ * Implements hook_xml_form_builder_forms().
  */
-function islandora_basic_collection_islandora_xml_form_builder_forms() {
+function islandora_basic_collection_xml_form_builder_forms() {
   $module_path = drupal_get_path('module', 'islandora_basic_collection');
   return array(
     'Collection MODS form' => array(
@@ -396,9 +396,9 @@ function islandora_basic_collection_islandora_xml_form_builder_forms() {
 }
 
 /**
- * Implements hook_islandora_xml_form_builder_form_associations().
+ * Implements hook_xml_form_builder_form_associations().
  */
-function islandora_basic_collection_islandora_xml_form_builder_form_associations() {
+function islandora_basic_collection_xml_form_builder_form_associations() {
   return array(
     'islandora_basic_collection_mods_form' => array(
       'content_model' => 'islandora:collectionCModel',
@@ -726,7 +726,7 @@ EOQ;
     if (islandora_namespace_accessible($pid)) {
       $collections[$pid] = array(
         'pid' => $pid,
-        'label' => $result['label']['value'],
+        'label' => $result['label']['value'] . " (" . $pid . ")",
       );
     }
   }
@@ -897,14 +897,11 @@ function islandora_basic_collection_islandora_object_access($op, $object, $user)
   $result = NULL;
 
   $collection_models = islandora_basic_collection_get_collection_content_models();
-  $is_a_collection = (
-    (count(array_intersect($collection_models, $object->models)) > 0) &&
-    isset($object['COLLECTION_POLICY'])
-  );
+  $is_a_collection = count(array_intersect($collection_models, $object->models)) > 0;
 
   if (in_array($op, array_keys(islandora_basic_collection_permission()))) {
     if ($is_a_collection) {
-      if ($op == ISLANDORA_BASIC_COLLECTION_CREATE_CHILD_COLLECTION) {
+      if ($op == ISLANDORA_BASIC_COLLECTION_CREATE_CHILD_COLLECTION && isset($object['COLLECTION_POLICY'])) {
         $result = islandora_object_access(ISLANDORA_INGEST, $object, $user) && islandora_datastream_access(ISLANDORA_VIEW_OBJECTS, $object['COLLECTION_POLICY'], $user);
         if ($result) {
           $policy = new CollectionPolicy($object['COLLECTION_POLICY']->content);
@@ -913,7 +910,12 @@ function islandora_basic_collection_islandora_object_access($op, $object, $user)
         }
       }
       elseif ($op == ISLANDORA_BASIC_COLLECTION_MANAGE_COLLECTION_POLICY) {
-        $result = islandora_datastream_access(ISLANDORA_METADATA_EDIT, $object['COLLECTION_POLICY'], $user);
+        if (isset($object['COLLECTION_POLICY'])) {
+          $result = islandora_datastream_access(ISLANDORA_METADATA_EDIT, $object['COLLECTION_POLICY'], $user);
+        }
+        else {
+          $result = islandora_object_access(ISLANDORA_ADD_DS, $object, $user);
+        }
       }
       elseif ($op == ISLANDORA_BASIC_COLLECTION_MIGRATE_COLLECTION_MEMBERS) {
         // Not sure how much sense this makes... Check that we can modify the
@@ -949,13 +951,14 @@ function islandora_basic_collection_islandora_collectioncmodel_islandora_ingest_
  * Implements hook_CMODEL_PID_islandora_object_ingested().
  */
 function islandora_basic_collection_islandora_collectioncmodel_islandora_object_ingested(AbstractObject $fedora_object) {
-
-  // Add TN datastream.
-  $thumbnail_datastream = $fedora_object->constructDatastream('TN');
-  $thumbnail_datastream->setContentFromFile(drupal_get_path('module', 'islandora_basic_collection') . '/images/folder.png', FALSE);
-  $thumbnail_datastream->label = 'Thumbnail';
-  $thumbnail_datastream->mimetype = 'image/png';
-  $fedora_object->ingestDatastream($thumbnail_datastream);
+  if (!isset($fedora_object['TN'])) {
+    // Add TN datastream.
+    $thumbnail_datastream = $fedora_object->constructDatastream('TN');
+    $thumbnail_datastream->setContentFromFile(drupal_get_path('module', 'islandora_basic_collection') . '/images/folder.png', FALSE);
+    $thumbnail_datastream->label = 'Thumbnail';
+    $thumbnail_datastream->mimetype = 'image/png';
+    $fedora_object->ingestDatastream($thumbnail_datastream);
+  }
 }
 
 /**
@@ -1217,4 +1220,18 @@ function islandora_basic_collection_islandora_datastream_modified() {
 function islandora_basic_collection_islandora_datastream_purged() {
   module_load_include('inc', 'islandora_basic_collection', 'includes/blocks');
   islandora_basic_collection_clear_object_count_cache();
+}
+
+/**
+ * Implements hook_islandora_solution_pack_child_relationships().
+ */
+function islandora_basic_collection_islandora_solution_pack_child_relationships($cmodels) {
+  if ($cmodels === 'all' || in_array('islandora:collectionCModel', $cmodels)) {
+    return array(
+      'predicate' => array(
+        '<fedora-rels-ext:isMemberOfCollection>',
+        '<fedora-rels-ext:isMemberOf>',
+      ),
+    );
+  }
 }
