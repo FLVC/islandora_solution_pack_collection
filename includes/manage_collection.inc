@@ -113,7 +113,7 @@ function islandora_basic_collection_create_child_collection_form(array $form, ar
 
   $parent_object = islandora_object_load($form_state['islandora']['shared_storage']['parent']);
   // Permissions handling.
-  if (!user_access(ISLANDORA_BASIC_COLLECTION_CREATE_CHILD_COLLECTION)) {
+  if (!islandora_object_access(ISLANDORA_BASIC_COLLECTION_CREATE_CHILD_COLLECTION, $parent_object)) {
     drupal_set_message(t('You do not have permissions to create collections.'), 'error');
     drupal_goto('islandora/object/' . $parent_object->id);
   }
@@ -257,7 +257,12 @@ function islandora_basic_collection_policy_management_form(array $form, array &$
   module_load_include('inc', 'islandora', 'includes/utilities');
   drupal_add_css(drupal_get_path('module', 'islandora_basic_collection') . "/css/collection_policy_table.css");
   $form_state['collection'] = $object;
-  $policy = new CollectionPolicy($object['COLLECTION_POLICY']->content);
+  if (isset($object['COLLECTION_POLICY'])) {
+    $policy = new CollectionPolicy($object['COLLECTION_POLICY']->content);
+  }
+  else {
+    $policy = CollectionPolicy::emptyPolicy();
+  }
   $policy_content_models = $policy->getContentModels();
   $content_models = islandora_get_content_models();
   $default_namespace = drupal_substr($object->id, 0, strpos($object->id, ":"));
@@ -328,7 +333,16 @@ function islandora_basic_collection_policy_management_form_submit(array $form, a
     $content_model = islandora_object_load($pid);
     $policy->addContentModel($pid, $properties['prompt'], $properties['namespace']);
   }
-  $collection['COLLECTION_POLICY']->content = $policy->getXML();
+  if (!isset($collection['COLLECTION_POLICY'])) {
+    $cp_ds = $collection->constructDatastream('COLLECTION_POLICY', 'M');
+    $cp_ds->mimetype = 'application/xml';
+    $cp_ds->label = 'Collection Policy';
+    $cp_ds->setContentFromString($policy->getXML());
+    $collection->ingestDatastream($cp_ds);
+  }
+  else {
+    $collection['COLLECTION_POLICY']->setContentFromString($policy->getXML());
+  }
   drupal_set_message(t('Updated collection policy'));
 }
 
@@ -369,6 +383,24 @@ function islandora_basic_collection_share_children_form(array $form, array &$for
       '#value' => t('Share All Objects'),
     ),
   );
+}
+
+/**
+ * Form validation for share children form.
+ *
+ * @param array $form
+ *   The Drupal form definition.
+ * @param array $form_state
+ *   The Drupal form state.
+ */
+function islandora_basic_collection_share_children_form_validate(array $form, array &$form_state) {
+  $children = array_filter($form_state['values']['children']);
+  if (empty($children)) {
+    form_set_error('children', t('No children available to share.'));
+  }
+  if (!islandora_basic_collection_validate_form($form_state)) {
+    form_set_error('collection', t("You cannot share a collection with itself."));
+  }
 }
 
 /**
@@ -431,6 +463,24 @@ function islandora_basic_collection_migrate_children_form(array $form, array &$f
       '#value' => t('Migrate All Objects'),
     ),
   );
+}
+
+/**
+ * Form validation for migrate children form.
+ *
+ * @param array $form
+ *   The Drupal form definition.
+ * @param array $form_state
+ *   The Drupal form state.
+ */
+function islandora_basic_collection_migrate_children_form_validate(array $form, array &$form_state) {
+  $children = array_filter($form_state['values']['children']);
+  if (empty($children)) {
+    form_set_error('children', t('No children available to migrate.'));
+  }
+  if (!islandora_basic_collection_validate_form($form_state)) {
+    form_set_error('collection', t("You cannot migrate a collection into itself."));
+  }
 }
 
 /**
@@ -500,4 +550,41 @@ function islandora_basic_collection_delete_children_form_submit(array $form, arr
   $children = array_keys(array_filter($form_state['values']['children']));
   $batch = islandora_basic_collection_delete_children_batch($collection, $children);
   batch_set($batch);
+}
+
+/**
+ * Common form validation for share/migrate members.
+ *
+ * Ensures you don't share/migrate a collection into itself.
+ *
+ * @param array $form_state
+ *   The Drupal form state.
+ *
+ * @return bool
+ *   Whether the form is valid or not.
+ */
+function islandora_basic_collection_validate_form(array $form_state) {
+  $new_collection = $form_state['values']['collection'];
+  $clicked_button = end($form_state['clicked_button']['#parents']);
+
+  if ($clicked_button == 'submit_all') {
+    $source_collection = $form_state['collection'];
+    $query = <<<EOT
+PREFIX fedora-rels-ext: <info:fedora/fedora-system:def/relations-external#>
+SELECT ?object WHERE {
+?object fedora-rels-ext:isMemberOfCollection <info:fedora/{$source_collection}> .
+FILTER (sameTerm(?object, <info:fedora/{$new_collection}>))
+}
+EOT;
+    $connection = islandora_get_tuque_connection();
+    $num_results = $connection->repository->ri->countQuery($query, 'sparql');
+    return ($num_results <= 0);
+  }
+  else {
+    $children = array_keys(array_filter($form_state['values']['children']));
+    if (array_intersect($children, array($new_collection))) {
+      return FALSE;
+    }
+  }
+  return TRUE;
 }

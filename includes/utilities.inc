@@ -102,6 +102,7 @@ function islandora_basic_collection_get_children_select_table_form_element(Abstr
   foreach ($results as $result) {
     $pid = $result['object']['value'];
     $label = empty($result['title']['value']) ? t('Untitled') : filter_xss($result['title']['value']);
+    $label = $label . " (" . $pid . ")";
     $owner = empty($result['owner']['value']) ? t('Unowned') : filter_xss($result['owner']['value']);
     $date_modified = empty($result['date_modified']['value']) ? t('Unknown') : filter_xss($result['date_modified']['value']);
     $rows[$pid] = array(
@@ -193,12 +194,16 @@ function islandora_basic_collection_add_to_collection(AbstractObject $new_member
  *
  * @param AbstractObject $member
  *   The object to remove.
- * @param AbstractObject $collection
- *   The collection object to remove from.
+ * @param mixed $collection
+ *   The AbstractObject or string PID of the collection to remove object from.
  */
-function islandora_basic_collection_remove_from_collection(AbstractObject $member, AbstractObject $collection) {
-  $member->relationships->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $collection->id);
-  $member->relationships->remove(FEDORA_RELS_EXT_URI, 'isMemberOf', $collection->id);
+function islandora_basic_collection_remove_from_collection(AbstractObject $member, $collection) {
+  if ($collection instanceof AbstractObject) {
+    $collection = $collection->id;
+  }
+
+  $member->relationships->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $collection);
+  $member->relationships->remove(FEDORA_RELS_EXT_URI, 'isMemberOf', $collection);
 }
 
 /**
@@ -224,10 +229,11 @@ EOQ;
   $root_namespace = islandora_get_namespace($root);
   foreach ($results as $objects) {
    $pid = $objects['pid']['value'];
+   //if (islandora_namespace_accessible($pid)) {
    if (($root_namespace == 'islandora')||($root_namespace == 'palmm')||(islandora_get_namespace($pid) == $root_namespace)||(islandora_get_namespace($pid)  == 'palmm')) {
-    $return[$objects['pid']['value']] = t('@label (@pid)', array(
+    $return[$pid] = t('@label (@pid)', array(
       '@label' => $objects['label']['value'],
-      '@pid' => $objects['pid']['value'],
+      '@pid' => $pid,
     ));
    }
   }
